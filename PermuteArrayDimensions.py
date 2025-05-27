@@ -27,7 +27,9 @@ class PermuteArrayDimensions(ppl.Pass):
         self._permute_index(sdfg, sdfg, self._permute_map, self._add_permute_maps)
         return 0
 
-    def _add_permute_map(self, sdfg: dace.SDFG, state: dace.SDFGState, old_shape: List[int], new_shape: List[int], permute_indices: List[int], old_name: str, new_name: str):
+    def _add_permute_map(self, sdfg: dace.SDFG, state: dace.SDFGState,
+                         old_shape: List[int], new_shape: List[int],
+                         permute_indices: List[int], old_name: str, new_name: str):
         old_access = state.add_access(old_name)
         new_access = state.add_access(new_name)
         range_dict = dict()
@@ -55,10 +57,17 @@ class PermuteArrayDimensions(ppl.Pass):
                 dace.Memlet(expr=f"{new_name}[{dst_access}]"))
 
     def _inverse_permute_indices(self, permute_indices: List[int]) -> List[int]:
-        permute_indices_as_map = {i: permute_indices[i] for i in range(len(permute_indices))}
-        inverse_permtue_indices_as_map = {v: k for k, v in permute_indices_as_map.items()}
-        inverse_permute_indices = list(inverse_permtue_indices_as_map.values())
-        return inverse_permute_indices
+        # implicit([0, 1, 2, 3]) -> [0, 3, 1, 2]
+        # 1. get as a dictionary {0:0, 1:3, 2:1, 3:2}
+        # 2. invert keys and values to get {0:0, 3:1, 1:2, 2:3}
+        # 3. sort by keys to get {0:0, 1:3, 2:1, 3:2} -> [0, 3, 1, 2]
+        # 1: Create mapping dictionary
+        perm_map = {i: p for i, p in enumerate(permute_indices)}
+        # 2: Invert the dictionary
+        inverse_map = {v: k for k, v in perm_map.items()}
+        # 3: Sort by key and extract values
+        inverse_perm = [inverse_map[i] for i in sorted(inverse_map)]
+        return inverse_perm
 
     def _permute_index(self, root: dace.SDFG, sdfg: dace.SDFG, permute_map : Dict[str, List[int]], add_permute_maps: bool):
         # If top-level SDFG, namely the root is equal to the sdfg, we might need to add a transpose state and maps to
@@ -73,6 +82,7 @@ class PermuteArrayDimensions(ppl.Pass):
 
                 # Generate new shape
                 permuted_shape = []
+                assert len(permute_indices) == len(arr_shape), f"Permute indices {permute_indices} and array shape {arr_shape} must have the same length {arr_name}"
                 for i in permute_indices:
                     permuted_shape.append(arr_shape[i])
 
@@ -97,7 +107,7 @@ class PermuteArrayDimensions(ppl.Pass):
                     sdfg.add_datadesc(name="permuted_" + arr_name, datadesc=permuted_arr, find_new_name=False)
                 else:
                     sdfg.remove_data(name=arr_name, validate=False)
-                    sdfg.add_datadesc(name=arr_name, datadesc=permuted_arr, validate=False) # Need to transpose memlets before validation
+                    sdfg.add_datadesc(name=arr_name, datadesc=permuted_arr) # Need to transpose memlets before validation
 
                 name_map[arr_name] = "permuted_" + arr_name if (add_permute_maps and root == sdfg) else arr_name
 
@@ -105,6 +115,9 @@ class PermuteArrayDimensions(ppl.Pass):
             if add_permute_maps:
                 permute_state = sdfg.add_state_before(sdfg.start_state, "permute_in")
                 permute_states_to_skip.add(permute_state)
+                final_block = [v for v in sdfg.nodes() if sdfg.out_degree(v) == 0][0]
+                permute_out_state = sdfg.add_state_after(final_block, "permute_out")
+                permute_states_to_skip.add(permute_out_state)
 
                 # Add maps to permute the input arrays to their permuted shape
                 for old_name, new_name in name_map.items():
@@ -121,11 +134,6 @@ class PermuteArrayDimensions(ppl.Pass):
                                             old_name=old_name,
                                             new_name=new_name)
 
-
-                final_block = [v for v in sdfg.nodes() if sdfg.out_degree(v) == 0][0]
-                permute_out_state = sdfg.add_state_after(final_block, "permute_out")
-                permute_states_to_skip.add(permute_out_state)
-
                 # Add maps to permute the arrays back to their original shape
                 for old_name, new_name in name_map.items():
                     old_shape = sdfg.arrays[old_name].shape
@@ -133,7 +141,7 @@ class PermuteArrayDimensions(ppl.Pass):
                     # Permute map is of form map[old] = new, we need to invert it
                     inverse_permute_indices = self._inverse_permute_indices(permute_map[old_name])
                     # Only non-transient glb arrays are output arrays
-                    if sdfg.arrays[new_name].transient is False:
+                    if sdfg.arrays[old_name].transient is False:
                         self._add_permute_map(sdfg=sdfg,
                                             state=permute_out_state,
                                             old_shape=new_shape,
@@ -142,6 +150,32 @@ class PermuteArrayDimensions(ppl.Pass):
                                             old_name=new_name,
                                             new_name=old_name)
 
+        # The transformation has added the permuted shapes and maps to permute them if the user requested it.
+        # The transformation has yet permuted the memlets as we want to access the previous defined arrays
+        # The arrays passed to the NestedSDFG nodes need to be permuted as well, recursively go deeper
+        for state in sdfg.all_states():
+            for node in state.nodes():
+                if isinstance(node, dace.nodes.NestedSDFG):
+                    new_permute_map = dict()
+                    # Change the in connector name
+                    # If before it was A -> (A)(NestedSDFG)
+                    # it will be per_A -> (A)(NestedSDFG)
+                    # If before it was A -> (nA)(NestedSDFG)
+                    # it will be per_A -> (nA)(NestedSDFG)
+                    # The nested SDFG needs to have identity as the name map
+                    # Update the names for the nested SDFG
+                    # But only if the full array is passed, for example A[i] (array) -> tmp_X (scalar) does not require replacement
+                    for ie in state.in_edges(node):
+                        src_name = ie.data.data
+                        dst_name = ie.dst_conn
+                        if src_name in permute_map and sdfg.arrays[src_name].shape == node.sdfg.arrays[dst_name].shape:
+                            new_permute_map[dst_name] = permute_map[src_name]
+                    for oe in state.out_edges(node):
+                        src_name = oe.src_conn
+                        dst_name = oe.data.data
+                        if dst_name in permute_map  and sdfg.arrays[dst_name].shape == node.sdfg.arrays[src_name].shape:
+                            new_permute_map[src_name] = permute_map[dst_name]
+                    self._permute_index(root=root, sdfg=node.sdfg, permute_map=new_permute_map, add_permute_maps=False)
 
         for state in sdfg.all_states():
             if sdfg == root and (state in permute_states_to_skip):
@@ -175,29 +209,3 @@ class PermuteArrayDimensions(ppl.Pass):
                         new_subset.append(edge.data.subset[permute_indices[i]])
                     edge.data.subset = dace.subsets.Range(new_subset)
 
-        # The transformation has added the permuted shapes and maps to permute them if the user requested it.
-        # The transformation has permuted the memlets
-        # The arrays passed to the NestedSDFG nodes need to be permuted as well, recursively go deeper
-        for state in sdfg.all_states():
-            for node in state.nodes():
-                if isinstance(node, dace.nodes.NestedSDFG):
-                    new_permute_map = dict()
-                    # Change the in connector name
-                    # If before it was A -> (A)(NestedSDFG)
-                    # it will be per_A -> (A)(NestedSDFG)
-                    # If before it was A -> (nA)(NestedSDFG)
-                    # it will be per_A -> (nA)(NestedSDFG)
-                    # The nested SDFG needs to have identity as the name map
-                    # Update the names for the nested SDFG
-                    for ie in state.in_edges(node):
-                        src_name = ie.data.data
-                        dst_name = ie.dst_conn
-                        if src_name in permute_map:
-                            new_permute_map[dst_name] = permute_map[src_name]
-                    for oe in state.out_edges(node):
-                        src_name = oe.src_conn
-                        dst_name = oe.data.data
-                        if dst_name in permute_map:
-                            new_permute_map[src_name] = permute_map[dst_name]
-
-                    self._permute_index(root=root, sdfg=node.sdfg, permute_map=new_permute_map, add_permute_maps=False)
