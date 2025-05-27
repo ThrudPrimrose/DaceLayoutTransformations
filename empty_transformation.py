@@ -5,7 +5,7 @@ from dace.transformation import transformation
 
 
 @transformation.explicit_cf_compatible
-class {ExperimentalEmptyTransformation}(transformation.MultiStateTransformation):
+class EmptyTransformation(transformation.MultiStateTransformation):
     @staticmethod
     def annotates_memlets():
         return False
