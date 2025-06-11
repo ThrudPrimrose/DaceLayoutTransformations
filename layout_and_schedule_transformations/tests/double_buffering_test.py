@@ -24,7 +24,7 @@ def test_standalone_execution():
         C: dace.float64[N] @ dace.dtypes.StorageType.GPU_Global,
     ):
         for i in dace.map[0:N:512] @ dace.dtypes.ScheduleType.GPU_Device:
-            for k in dace.map[0:2] @ dace.dtypes.ScheduleType.GPU_Sequential:
+            for k in dace.map[0:2] @ dace.dtypes.ScheduleType.Sequential:
                 for j in dace.map[0:256] @ dace.dtypes.ScheduleType.GPU_ThreadBlock:
                     C[i + j + k * 256] = A[i + j + k * 256] + B[i + j + k * 256]
 
@@ -82,24 +82,19 @@ def test_standalone_execution():
     transformed_sdfg(vals_A=vals_A_2, vals_B=vals_B_2, vals_C=vals_C_2, N=N_val)
 
     # Check results
-    vals_A_close = np.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
-    vals_B_close = np.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
+    vals_C_close = cp.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
 
-    print(f"vals_A results match: {vals_A_close}")
-    print(f"vals_B results match: {vals_B_close}")
+    print(f"vals_C results match: {vals_C_close}")
 
-    if vals_A_close and vals_B_close:
-        print("✅ All tests passed! Permute transformations preserve correctness.")
+    if vals_C_close:
+        print("Test Fail: Shared Memory transformations preserve correctness, but they should not be synchronized by the current codegen.")
     else:
-        print("❌ Test failed! Results differ between original and transformed SDFGs.")
-        if not vals_A_close:
-            print(f"vals_A max difference: {np.max(np.abs(vals_A_orig - vals_A_2))}")
-            print(f"vals_A difference: {np.abs(vals_A_orig - vals_A_2)}")
-        if not vals_B_close:
-            print(f"vals_B max difference: {np.max(np.abs(vals_B_orig - vals_B_2))}")
-            print(f"vals_B difference: {np.abs(vals_B_orig - vals_B_2)}")
+        print("Test Pass: Weird Shared Memory transformations can't be synchronized by the current codegen.")
+        if not vals_C_close:
+            print(f"vals_A max difference: {cp.max(cp.abs(vals_C_orig - vals_C_2))}")
+            print(f"vals_A difference: {cp.abs(vals_C_orig - vals_C_2)}")
+    assert not vals_C_close
 
-    return vals_A_close and vals_B_close
 
 
 if __name__ == "__main__":

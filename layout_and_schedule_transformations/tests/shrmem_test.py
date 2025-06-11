@@ -132,25 +132,18 @@ def test_standalone_execution_2():
     transformed_sdfg(A=vals_A_2, B=vals_B_2, C=vals_C_2, N=N_val)
 
     # Check results
-    vals_A_close = cp.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
-    vals_B_close = cp.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
+    vals_C_close = cp.allclose(vals_C_orig, vals_C_2, rtol=1e-10, atol=1e-12)
 
-    print(f"vals_A results match: {vals_A_close}")
-    print(f"vals_B results match: {vals_B_close}")
+    print(f"vals_C results match: {vals_C_close}")
 
-    if vals_A_close and vals_B_close:
+    if vals_C_close:
         print("Test Fail: Shared Memory transformations preserve correctness, but they should not be synchronized by the current codegen.")
     else:
         print("Test Pass: Weird Shared Memory transformations can't be synchronized by the current codegen.")
-        if not vals_A_close:
-            print(f"vals_A max difference: {cp.max(cp.abs(vals_A_orig - vals_A_2))}")
-            print(f"vals_A difference: {cp.abs(vals_A_orig - vals_A_2)}")
-        if not vals_B_close:
-            print(f"vals_B max difference: {cp.max(cp.abs(vals_B_orig - vals_B_2))}")
-            print(f"vals_B difference: {cp.abs(vals_B_orig - vals_B_2)}")
-
-    assert not (vals_A_close or vals_B_close)
-    return not (vals_A_close or vals_B_close)
+        if not vals_C_close:
+            print(f"vals_A max difference: {cp.max(cp.abs(vals_C_orig - vals_C_2))}")
+            print(f"vals_A difference: {cp.abs(vals_C_orig - vals_C_2)}")
+    assert not vals_C_close
 
 if __name__ == "__main__":
     success = test_standalone_execution()

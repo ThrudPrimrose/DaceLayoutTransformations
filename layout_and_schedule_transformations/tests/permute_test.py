@@ -3,7 +3,6 @@ import numpy as np
 import dace
 from layout_and_schedule_transformations.permute_array_dimensions import PermuteArrayDimensions
 from layout_and_schedule_transformations.permute_map_dimensions import PermuteMapDimensions
-import pytest
 
 
 def test_standalone_execution():
