@@ -1,0 +1,20 @@
+# Ignore Python cache directories and files everywhere
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.py[cod]
+*/*.py[cod]
+**/*.py[cod]
+
+# Ignore DaCe cache and graph folders everywhere
+.dacecache/
+*/.dacecache/
+**/.dacecache/
+_dacegraphs
+*/_dacegraphs
+**/_dacegraphs
+
+# Ignore Jupyter notebook checkpoints everywhere
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+**/.ipynb_checkpoints/

@@ -1,8 +1,9 @@
 import copy
 import numpy as np
 import dace
-from DaceLayoutAndScheduleTransformations import PermuteArrayDimensions
-from DaceLayoutAndScheduleTransformations import PermuteMapDimensions
+from layout_and_schedule_transformations.permute_array_dimensions import PermuteArrayDimensions
+from layout_and_schedule_transformations.permute_map_dimensions import PermuteMapDimensions
+import pytest
 
 
 def test_standalone_execution():
@@ -55,7 +56,7 @@ def test_standalone_execution():
     transformed_sdfg.name = original_sdfg.name + "_transposed"
 
     # Apply transformations
-    PermuteArrayDimensions.PermuteArrayDimensions(
+    PermuteArrayDimensions(
         permute_map={"vals_A": [0, 2, 1], "vals_B": [0, 2, 1]},
         add_permute_maps=True,
     ).apply_pass(sdfg=transformed_sdfg, pipeline_results={})
@@ -68,7 +69,7 @@ def test_standalone_execution():
                 map_labels[node.label] = [0, 2, 1]
 
     if map_labels:
-        PermuteMapDimensions.PermuteMapDimensions(
+        PermuteMapDimensions(
             permute_map=map_labels,
             use_labels=True
         ).apply_pass(sdfg=transformed_sdfg, pipeline_results={})
@@ -112,6 +113,5 @@ def test_standalone_execution():
 
 
 if __name__ == "__main__":
-    # Run standalone test
     success = test_standalone_execution()
     exit(0 if success else 1)

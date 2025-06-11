@@ -1,10 +1,10 @@
 import copy
 import numpy as np
 import dace
+import pytest
 
-
-import DaceLayoutAndScheduleTransformations
-from DaceLayoutAndScheduleTransformations import DoubleBuffering
+from layout_and_schedule_transformations.double_buffering import DoubleBuffering
+from layout_and_schedule_transformations.tests.test_utils import _add_shared_memory
 
 def test_standalone_execution():
     """Standalone test function that can be run without pytest."""
@@ -23,30 +23,44 @@ def test_standalone_execution():
         B: dace.float64[N] @ dace.dtypes.StorageType.GPU_Global,
         C: dace.float64[N] @ dace.dtypes.StorageType.GPU_Global,
     ):
-        for i in dace.map[0:N] @ dace.dtypes.ScheduleType.GPU_Device:
-            C[i] = A[i] + B[i]
+        for i in dace.map[0:N:512] @ dace.dtypes.ScheduleType.GPU_Device:
+            for k in dace.map[0:2] @ dace.dtypes.ScheduleType.GPU_Sequential:
+                for j in dace.map[0:256] @ dace.dtypes.ScheduleType.GPU_ThreadBlock:
+                    C[i + j + k * 256] = A[i + j + k * 256] + B[i + j + k * 256]
 
     # Create original SDFG
     original_sdfg = kernel.to_sdfg(use_cache=False, simplify=False)
     original_sdfg.simplify()
+    original_sdfg.save("original_sdfg.sdfg")
+
+    original_sdfg.validate()
 
     # Create transformed SDFG
     transformed_sdfg = copy.deepcopy(original_sdfg)
     transformed_sdfg.name = original_sdfg.name + "_double_buffered"
+    _add_shared_memory(transformed_sdfg, add_src_access_node=False)
+    transformed_sdfg.save("original_sdfg_with_shared_memory.sdfg")
 
     # Apply transformations
     for state in transformed_sdfg.all_states():
         for node in state.nodes():
             if isinstance(node, dace.sdfg.nodes.MapEntry) and node.map.schedule == dace.dtypes.ScheduleType.GPU_Device:
                 # Apply double buffering transformation
-                DoubleBuffering.DoubleBuffering(
-                    device_map_type=dace.dtypes.ScheduleType.GPU_Device,
-                    double_buffering_copy_src=dace.dtypes.StorageType.GPU_Global,
-                    double_buffering_copy_dst=dace.dtypes.StorageType.GPU_Shared,
-                ).apply_to(
-                    map_entry=node,
+                options_dict = {
+                    "device_map_type":dace.dtypes.ScheduleType.GPU_Device,
+                    "copy_src_type":dace.dtypes.StorageType.GPU_Global,
+                    "copy_dst_type":dace.dtypes.StorageType.GPU_Shared,
+                }
+                db_transform_can_be_applied = DoubleBuffering(**options_dict).can_be_applied_to(
                     sdfg=transformed_sdfg,
-                    cfg=state,
+                    options=options_dict,
+                    map_entry=node,
+                )
+                assert db_transform_can_be_applied, f"DoubleBuffering transformation should be applicable to the map entry. Returned:{db_transform_can_be_applied}"
+
+                DoubleBuffering(**options_dict).apply_to(
+                    map_entry=node,
+                    sdfg=transformed_sdfg
                 )
 
     # Validate SDFGs
@@ -89,6 +103,5 @@ def test_standalone_execution():
 
 
 if __name__ == "__main__":
-    # Run standalone test
     success = test_standalone_execution()
     exit(0 if success else 1)
