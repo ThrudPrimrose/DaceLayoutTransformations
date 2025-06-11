@@ -3,7 +3,6 @@ from dace.sdfg import utils as sdutil
 from dace.sdfg.state import ControlFlowRegion
 from dace.transformation import transformation
 
-
 @transformation.explicit_cf_compatible
 class EmptyTransformation(transformation.MultiStateTransformation):
     @staticmethod

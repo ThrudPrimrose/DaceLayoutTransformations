@@ -1,10 +1,8 @@
 import dace
-from typing import Dict, List, Any, Optional, Set
-
-from dace import properties
+from typing import Dict, List, Any
 from dace.transformation import pass_pipeline as ppl
-
 from dataclasses import dataclass
+
 
 @dataclass
 class PermuteArrayDimensions(ppl.Pass):

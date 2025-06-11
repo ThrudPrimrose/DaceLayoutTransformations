@@ -1,10 +1,7 @@
 import dace
 from typing import Dict, List, Any
-
-from dace import properties
 from dace.transformation.dataflow.map_dim_shuffle import MapDimShuffle
 from dace.transformation import pass_pipeline as ppl
-
 from dataclasses import dataclass
 
 
